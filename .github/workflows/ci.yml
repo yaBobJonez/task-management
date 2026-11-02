@@ -13,12 +13,7 @@ permissions:
 jobs:
   test:
     name: "Stage 1: test"
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os:
-          - ubuntu-latest
-          - windows-latest
+    runs-on: ubuntu-latest
 
     steps:
       - name: Отримання репозиторію
@@ -31,45 +26,32 @@ jobs:
           cache: 'true'
 
       - name: Встановлення GTest
-        if: ${{ runner.os == 'Linux' }}
         run: |
           sudo apt update
           sudo apt install -y libgtest-dev
 
-      - name: Встановлення GTest
-        if: ${{ runner.os == 'Windows' }}
-        run: vcpkg install gtest:x64-windows
-
-      - name: Конфігурація CMake для тестів (Linux)
-        if: ${{ runner.os == 'Linux' }}
+      - name: Конфігурація CMake для тестів
         run: cmake -S . -B build -G Ninja -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-
-      - name: Конфігурація CMake для тестів (Windows)
-        if: ${{ runner.os == 'Windows' }}
-        run: cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
 
       - name: Запуск unit-тестів
         run: |
-          cmake --build build --target TaskList_Tests --config Debug --parallel
-          ctest --test-dir build/tests -C Debug --output-on-failure --output-junit results.xml
+          cd build
+          cmake --build . --target TaskList_Tests --parallel
+          cd tests
+          ctest --output-on-failure --output-junit results.xml
 
       - name: Відображення результатів тестів
-        if: ${{ always() && hashFiles('build/tests/results.xml') != '' }}
+        if: ${{ !cancelled() }}
         uses: dorny/test-reporter@v2
         with:
-          name: Unit-тести (${{ matrix.os }})
+          name: Unit-тести
           path: build/tests/results.xml
           reporter: java-junit
 
   build:
     name: "Stage 2: build"
     needs: test
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os:
-          - ubuntu-latest
-          - windows-latest
+    runs-on: ubuntu-latest
 
     steps:
       - name: Отримання репозиторію
@@ -81,24 +63,19 @@ jobs:
           version: '6.8.3'
           cache: 'true'
 
-      - name: Конфігурація CMake (Linux)
-        if: ${{ runner.os == 'Linux' }}
+      - name: Конфігурація CMake
         run: cmake -S . -B build -G Ninja -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DBUILD_TESTING=OFF
 
-      - name: Конфігурація CMake (Windows)
-        if: ${{ runner.os == 'Windows' }}
-        run: cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DBUILD_TESTING=OFF
-
       - name: Збірка проєкту
-        run: cmake --build build --target TaskManager --config Release --parallel
+        run: cmake --build build --target TaskManager --parallel
 
       - name: Створення артефакта
         run: |
-          cmake -E make_directory artifacts
-          cmake --install build --config Release --prefix artifacts
+          mkdir -p artifacts
+          cp build/src/TaskManager artifacts/
 
       - name: Збереження артефакта
         uses: actions/upload-artifact@v6
         with:
-          name: build-artifact-${{ matrix.os }}
+          name: build-artifact
           path: artifacts/
