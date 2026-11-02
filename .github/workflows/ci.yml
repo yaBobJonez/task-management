@@ -7,15 +7,18 @@ on:
       - main
 
 permissions:
-  contents: write
-  pull-requests: write
-  actions: read
+  contents: read
   checks: write
 
 jobs:
   test:
     name: "Stage 1: test"
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
 
     steps:
       - name: Отримання репозиторію
@@ -28,32 +31,42 @@ jobs:
           cache: 'true'
 
       - name: Встановлення GTest
+        if: ${{ runner.os == 'Linux' }}
         run: |
           sudo apt update
           sudo apt install -y libgtest-dev
 
+      - name: Встановлення GTest
+        if: ${{ runner.os == 'Windows' }}
+        run: vcpkg install gtest:x64-windows
+
       - name: Конфігурація CMake для тестів
         run: cmake -S . -B build -G Ninja -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+        env:
+          CMAKE_TOOLCHAIN_FILE: ${{ runner.os == 'Windows' && format('{0}/scripts/buildsystems/vcpkg.cmake', env.VCPKG_INSTALLATION_ROOT) || '' }}
 
       - name: Запуск unit-тестів
         run: |
-          cd build
-          cmake --build . --target TaskList_Tests --parallel
-          cd tests
-          ctest --output-on-failure --output-junit results.xml
+          cmake --build build --target TaskList_Tests --parallel
+          ctest --test-dir build/tests --output-on-failure --output-junit results.xml
 
       - name: Відображення результатів тестів
         if: ${{ !cancelled() }}
         uses: dorny/test-reporter@v2
         with:
-          name: Unit-тести
+          name: Unit-тести (${{ matrix.os }})
           path: build/tests/results.xml
           reporter: java-junit
 
   build:
     name: "Stage 2: build"
     needs: test
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
 
     steps:
       - name: Отримання репозиторію
@@ -67,100 +80,19 @@ jobs:
 
       - name: Конфігурація CMake
         run: cmake -S . -B build -G Ninja -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DBUILD_TESTING=OFF
+        env:
+          CMAKE_TOOLCHAIN_FILE: ${{ runner.os == 'Windows' && format('{0}/scripts/buildsystems/vcpkg.cmake', env.VCPKG_INSTALLATION_ROOT) || '' }}
 
       - name: Збірка проєкту
         run: cmake --build build --target TaskManager --parallel
 
       - name: Створення артефакта
         run: |
-          mkdir -p artifacts
-          cp build/src/TaskManager artifacts/
-          date | tee artifacts/build_info.txt
+          cmake -E make_directory artifacts
+          cmake --install build --prefix artifacts
 
       - name: Збереження артефакта
         uses: actions/upload-artifact@v6
         with:
-          name: build-artifact
+          name: build-artifact-${{ matrix.os }}
           path: artifacts/
-
-  deploy_staging:
-    name: "Stage 3: deploy to staging"
-    needs: build
-    runs-on: ubuntu-latest
-
-    environment:
-      name: staging
-
-    steps:
-      - name: Завантаження артефакта
-        uses: actions/download-artifact@v6
-        with:
-          name: build-artifact
-          path: staging/
-
-      - name: Імітація деплою у staging
-        run: |
-          echo "Виконуємо розгортання на staging..."
-          echo ""
-          ls -la staging/
-          echo ""
-          echo "Дата і час збірки:"
-          cat staging/build_info.txt
-          echo "Успішно вивантажено."
-
-  verify_staging:
-    name: "Stage 4: verify staging"
-    needs: deploy_staging
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Завантаження артефакта
-        uses: actions/download-artifact@v6
-        with:
-          name: build-artifact
-          path: staging/
-
-      - name: Імітація smoke-тестів
-        run: |
-          echo "1. Перевірка, що виконуваний файл існує"
-          if [ -f staging/TaskManager ]; then
-            echo "✓ Pass"
-          else
-            echo "✗ FAIL"
-            exit 1
-          fi
-          
-          echo "2. Якийсь інший рандомний тест"
-          if [ 1 -eq 1 ]; then
-            echo "✓ Pass"
-          else
-            echo "✗ FAIL"
-            exit 1
-          fi
-          
-          echo "Усі тести пройдено успішно."
-
-  deploy_production:
-    name: "Stage 5: deploy to production"
-    needs: verify_staging
-    runs-on: ubuntu-latest
-
-    environment:
-      name: production
-
-    steps:
-      - name: Завантаження артефакта
-        uses: actions/download-artifact@v6
-        with:
-          name: build-artifact
-          path: production/
-
-      - name: Імітація деплою у production
-        run: |
-          echo "Виконуємо розгортання на production..."
-          echo ""
-          ls -la production/
-          echo ""
-          echo "Дата і час збірки:"
-          cat production/build_info.txt
-          echo "Успішно розгорнуто для користувачів."
