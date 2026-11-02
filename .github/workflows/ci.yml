@@ -40,18 +40,21 @@ jobs:
         if: ${{ runner.os == 'Windows' }}
         run: vcpkg install gtest:x64-windows
 
-      - name: Конфігурація CMake для тестів
+      - name: Конфігурація CMake для тестів (Linux)
+        if: ${{ runner.os == 'Linux' }}
         run: cmake -S . -B build -G Ninja -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-        env:
-          CMAKE_TOOLCHAIN_FILE: ${{ runner.os == 'Windows' && format('{0}/scripts/buildsystems/vcpkg.cmake', env.VCPKG_INSTALLATION_ROOT) || '' }}
+
+      - name: Конфігурація CMake для тестів (Windows)
+        if: ${{ runner.os == 'Windows' }}
+        run: cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
 
       - name: Запуск unit-тестів
         run: |
-          cmake --build build --target TaskList_Tests --parallel
-          ctest --test-dir build/tests --output-on-failure --output-junit results.xml
+          cmake --build build --target TaskList_Tests --config Debug --parallel
+          ctest --test-dir build/tests -C Debug --output-on-failure --output-junit results.xml
 
       - name: Відображення результатів тестів
-        if: ${{ !cancelled() }}
+        if: ${{ always() && hashFiles('build/tests/results.xml') != '' }}
         uses: dorny/test-reporter@v2
         with:
           name: Unit-тести (${{ matrix.os }})
@@ -78,18 +81,21 @@ jobs:
           version: '6.8.3'
           cache: 'true'
 
-      - name: Конфігурація CMake
+      - name: Конфігурація CMake (Linux)
+        if: ${{ runner.os == 'Linux' }}
         run: cmake -S . -B build -G Ninja -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DBUILD_TESTING=OFF
-        env:
-          CMAKE_TOOLCHAIN_FILE: ${{ runner.os == 'Windows' && format('{0}/scripts/buildsystems/vcpkg.cmake', env.VCPKG_INSTALLATION_ROOT) || '' }}
+
+      - name: Конфігурація CMake (Windows)
+        if: ${{ runner.os == 'Windows' }}
+        run: cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DBUILD_TESTING=OFF
 
       - name: Збірка проєкту
-        run: cmake --build build --target TaskManager --parallel
+        run: cmake --build build --target TaskManager --config Release --parallel
 
       - name: Створення артефакта
         run: |
           cmake -E make_directory artifacts
-          cmake --install build --prefix artifacts
+          cmake --install build --config Release --prefix artifacts
 
       - name: Збереження артефакта
         uses: actions/upload-artifact@v6
