@@ -7,9 +7,7 @@ on:
       - main
 
 permissions:
-  contents: write
-  pull-requests: write
-  actions: read
+  contents: read
   checks: write
 
 jobs:
@@ -75,92 +73,9 @@ jobs:
         run: |
           mkdir -p artifacts
           cp build/src/TaskManager artifacts/
-          date | tee artifacts/build_info.txt
 
       - name: Збереження артефакта
         uses: actions/upload-artifact@v6
         with:
           name: build-artifact
           path: artifacts/
-
-  deploy_staging:
-    name: "Stage 3: deploy to staging"
-    needs: build
-    runs-on: ubuntu-latest
-
-    environment:
-      name: staging
-
-    steps:
-      - name: Завантаження артефакта
-        uses: actions/download-artifact@v6
-        with:
-          name: build-artifact
-          path: staging/
-
-      - name: Імітація деплою у staging
-        run: |
-          echo "Виконуємо розгортання на staging..."
-          echo ""
-          ls -la staging/
-          echo ""
-          echo "Дата і час збірки:"
-          cat staging/build_info.txt
-          echo "Успішно вивантажено."
-
-  verify_staging:
-    name: "Stage 4: verify staging"
-    needs: deploy_staging
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Завантаження артефакта
-        uses: actions/download-artifact@v6
-        with:
-          name: build-artifact
-          path: staging/
-
-      - name: Імітація smoke-тестів
-        run: |
-          echo "1. Перевірка, що виконуваний файл існує"
-          if [ -f staging/TaskManager ]; then
-            echo "✓ Pass"
-          else
-            echo "✗ FAIL"
-            exit 1
-          fi
-          
-          echo "2. Якийсь інший рандомний тест"
-          if [ 1 -eq 1 ]; then
-            echo "✓ Pass"
-          else
-            echo "✗ FAIL"
-            exit 1
-          fi
-          
-          echo "Усі тести пройдено успішно."
-
-  deploy_production:
-    name: "Stage 5: deploy to production"
-    needs: verify_staging
-    runs-on: ubuntu-latest
-
-    environment:
-      name: production
-
-    steps:
-      - name: Завантаження артефакта
-        uses: actions/download-artifact@v6
-        with:
-          name: build-artifact
-          path: production/
-
-      - name: Імітація деплою у production
-        run: |
-          echo "Виконуємо розгортання на production..."
-          echo ""
-          ls -la production/
-          echo ""
-          echo "Дата і час збірки:"
-          cat production/build_info.txt
-          echo "Успішно розгорнуто для користувачів."
